@@ -1,0 +1,11 @@
+# Ficheiros e pastas de compilação
+*.exe
+*.spec
+/build/
+/dist/
+
+# Ambiente virtual e caches do Python
+/venv/
+/.venv/
+/__pycache__/
+*.pyc
