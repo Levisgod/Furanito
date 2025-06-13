@@ -5,11 +5,11 @@ import os
 import hashlib
 import subprocess
 import sys
-import time # <<< CORREÇÃO 1: Importar a biblioteca time
+import time
 
 # --- CONFIGURAÇÃO ---
-# <<< CORREÇÃO 2: URL alterada para a versão RAW correta >>>
-BASE_URL = "https://raw.githubusercontent.com/Levisgod/Furanito/main/BotPokemon/"
+# <<< CORREÇÃO FINAL E DEFINITIVA: O nome da pasta foi corrigido para "BotPokemo" >>>
+BASE_URL = "https://raw.githubusercontent.com/Levisgod/Furanito/main/BotPokemo/"
 
 BOT_EXECUTABLE = "bot.exe" 
 # --- FIM DA CONFIGURAÇÃO ---
@@ -54,7 +54,6 @@ def check_for_updates():
 
     print(f"Versão Local: {local_version} | Versão Remota: {remote_version}")
 
-    # Verifica se os hashes locais são iguais aos remotos
     files_are_up_to_date = True
     remote_files = remote_manifest.get('files', {})
     if local_version != remote_version:
