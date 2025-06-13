@@ -1,7 +1,7 @@
 {
-    "version": "1.0.0",
+    "version": "1.0.1",
     "files": {
-        "bot.exe": "6340a4d0b599182378e2ecaf606ec3689da9ec04b2ff3e4bc3d7a18dab3fae8c",
-        "manifest.json": "5d0abd161cc2e9b7670096874effa46a669b94bea0eec2578d4c2641e956ec98"
+        "bot.exe": "8e9d6dc156478052d2a878643c871d68267d31a33ac4d3b854561a64158a4f9b",
+        "manifest.json": "3c35a3901823fcb70f545ae754684e3321e08ce498f32248bd87f380d7a41793"
     }
 }
