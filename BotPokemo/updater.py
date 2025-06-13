@@ -10,7 +10,7 @@ import sys
 # Coloca aqui o URL RAW do teu repositório no GitHub.
 # O formato é: https://raw.githubusercontent.com/SEU-NOME/NOME-DO-REPO/main/
 # **NOTA**: Tem de terminar com a barra "/"
-BASE_URL = "https://github.com/Levisgod/Furanito/tree/main/BotPokemon"
+BASE_URL = "https://raw.githubusercontent.com/Levisgod/Furanito/refs/heads/main/BotPokemo/manifest.json"
 
 # Nome do ficheiro .exe principal do teu bot
 BOT_EXECUTABLE = "bot.exe" 
