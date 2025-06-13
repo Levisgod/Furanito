@@ -1,7 +1,8 @@
 {
     "version": "1.0.1",
-    "files": {
+    "files_in_repo": {},
+    "files_in_release": {
         "bot.exe": "8e9d6dc156478052d2a878643c871d68267d31a33ac4d3b854561a64158a4f9b",
-        "manifest.json": "3c35a3901823fcb70f545ae754684e3321e08ce498f32248bd87f380d7a41793"
+        "updater.exe": "c4a333d733fc2f9a17bb5c254b7f89ccc6821a5cfd2300263ca9962ab7b0a58b"
     }
 }
