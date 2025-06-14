@@ -25,7 +25,7 @@ NOME_JANELA = "Pokemon Blaze Online"
 IMAGEM_BATALHA = 'batalha.png'
 IMAGEM_HP_INIMIGO = 'fim_batalha.png'
 IMAGEM_PEIXE = 'peixe.png'
-DEFAULT_POKEMON_PARAR = "shiny, ditto, zigzagoon"
+DEFAULT_POKEMON_PARAR = "ditto, zigzagoon" # Removido 'shiny' daqui
 
 def get_tesseract_path():
     if getattr(sys, 'frozen', False): base_path = sys._MEIPASS
@@ -40,10 +40,14 @@ REGIAO_NOME_POKEMON = (0, 0, 0, 0); POSICAO_BAG = (0, 0); POSICAO_POKEBOLA = (0,
 # Constantes de comportamento
 SEQUENCIA_MOVIMENTO = ['a', 'd']; TECLA_PESCA = 'f'; COOLDOWN_RECAST_PESCA = 4.0
 CONFIANCA_BATALHA = 0.7; CONFIANCA_HP = 0.8; CONFIANCA_PEIXE = 0.8
-FUZZY_MATCH_THRESHOLD = 70; DURACAO_MOVIMENTO = 0.05
-PAUSA_INICIO_BATALHA = 0.5 
-PAUSA_POS_ACAO = 1.0 
-PAUSA_FIM_BATALHA = 0.5; PAUSA_POS_FUGA = 0.8
+FUZZY_MATCH_THRESHOLD = 70
+DURACAO_MOVIMENTO = 0.01
+
+# Pausas de batalha
+PAUSA_INICIO_BATALHA = 0.1
+PAUSA_POS_ACAO = 0.3
+PAUSA_FIM_BATALHA = 0.3
+PAUSA_POS_FUGA = 0.3
 
 game_hwnd = None
 def find_game_window():
@@ -52,7 +56,7 @@ def find_game_window():
     try: game_hwnd = win32gui.FindWindow(None, NOME_JANELA); return game_hwnd is not None
     except Exception: game_hwnd = None; return False
 
-print("Sistema de controlo PRONTO. A usar a técnica 'Flash-Focus' para todas as ações.")
+print("Sistema de controlo PRONTO.")
 
 class BotControllerGUI(tk.Tk):
     def __init__(self):
@@ -70,7 +74,6 @@ class BotControllerGUI(tk.Tk):
         self.load_config(); self.create_widgets(); self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
-        # ... (código da GUI sem alterações) ...
         if os.path.exists(CONFIG_FILE) and REGIAO_NOME_POKEMON[2] > 0: status_inicial, status_color = "Bot parado. Configuração carregada.", "green"
         else: status_inicial, status_color = "PRIMEIRA VEZ? Vá à aba de Calibração!", "red"
         self.status_label = tk.Label(self, text=status_inicial, font=self.default_font, fg=status_color); self.status_label.pack(pady=5)
@@ -108,15 +111,31 @@ class BotControllerGUI(tk.Tk):
         global REGIAO_NOME_POKEMON, POSICAO_BAG, POSICAO_POKEBOLA
         try:
             with open(CONFIG_FILE, 'r') as f: config_data = json.load(f)
-            REGIAO_NOME_POKEMON = tuple(config_data.get('regiao_ocr', (0,0,0,0))); self.invert_colors_var.set(config_data.get('inverter_cores', False)); POSICAO_BAG = tuple(config_data.get('posicao_bag', (0,0))); POSICAO_POKEBOLA = tuple(config_data.get('posicao_pokebola', (0,0)))
-            self.region_var.set(f"Região: {REGIAO_NOME_POKEMON}"); self.bag_pos_var.set(f"Bag: {POSICAO_BAG}"); self.ball_pos_var.set(f"Bola: {POSICAO_POKEBOLA}")
+            REGIAO_NOME_POKEMON = tuple(config_data.get('regiao_ocr', (0,0,0,0)))
+            POSICAO_BAG = tuple(config_data.get('posicao_bag', (0,0)))
+            POSICAO_POKEBOLA = tuple(config_data.get('posicao_pokebola', (0,0)))
+            self.invert_colors_var.set(config_data.get('inverter_cores', False))
+            self.region_var.set(f"Região: {REGIAO_NOME_POKEMON}")
+            self.bag_pos_var.set(f"Bag: {POSICAO_BAG}")
+            self.ball_pos_var.set(f"Bola: {POSICAO_POKEBOLA}")
         except (FileNotFoundError, json.JSONDecodeError): print("Arquivo de configuração não encontrado ou inválido. Usando padrões.")
+        
     def save_config(self):
         with open(CONFIG_FILE, 'w') as f: json.dump({'regiao_ocr': REGIAO_NOME_POKEMON, 'posicao_bag': POSICAO_BAG, 'posicao_pokebola': POSICAO_POKEBOLA, 'inverter_cores': self.invert_colors_var.get()}, f, indent=4)
+        
     def update_status(self, message, color="black"): self.status_label.config(text=message, fg=color)
     def update_capture_count_label(self): self.capture_count_var.set(f"Alvos Capturados: {self.capture_count}")
-    def start_ocr_calibration(self): self.update_status("CALIBRAR OCR: Clique no CANTO SUPERIOR ESQUERDO.", "blue"); self.ocr_calibration_step = 1; self.capture_calibration_step = 0; self.listener = mouse.Listener(on_click=self.on_click); self.listener.start()
-    def start_capture_calibration(self): self.update_status("CALIBRAR CAPTURA: Clique no botão da BAG.", "blue"); self.capture_calibration_step = 1; self.ocr_calibration_step = 0; self.listener = mouse.Listener(on_click=self.on_click); self.listener.start()
+    
+    def start_ocr_calibration(self):
+        self.update_status("CALIBRAR OCR: Clique no CANTO SUPERIOR ESQUERDO.", "blue")
+        self.ocr_calibration_step = 1; self.capture_calibration_step = 0
+        self.listener = mouse.Listener(on_click=self.on_click); self.listener.start()
+        
+    def start_capture_calibration(self):
+        self.update_status("CALIBRAR CAPTURA: Clique no botão da BAG.", "blue")
+        self.capture_calibration_step = 1; self.ocr_calibration_step = 0
+        self.listener = mouse.Listener(on_click=self.on_click); self.listener.start()
+        
     def on_click(self, x, y, button, pressed):
         if not pressed: return
         if self.ocr_calibration_step == 1: self.first_click = (x, y); self.ocr_calibration_step = 2; self.after(0, self.update_status, "Ótimo! Agora clique no CANTO INFERIOR DIREITO.", "blue"); return
@@ -144,13 +163,14 @@ class BotControllerGUI(tk.Tk):
         self.update_status("Bot parado.", "green"); self.toggle_ui_state(tk.NORMAL)
         
     def toggle_ui_state(self, state):
-        self.start_button.config(state=tk.DISABLED if state == tk.DISABLED else tk.NORMAL)
-        self.stop_button.config(state=tk.NORMAL if state == tk.DISABLED else tk.DISABLED)
-        for widget in [self.patrol_radio, self.ev_radio, self.fish_radio, self.pokemon_entry, self.calibrate_ocr_button, self.test_ocr_button, self.invert_colors_check, self.calibrate_capture_button, self.capture_check] + self.radio_buttons: widget.config(state=state)
+        is_disabled = state == tk.DISABLED
+        self.start_button.config(state=tk.DISABLED if is_disabled else tk.NORMAL)
+        self.stop_button.config(state=tk.NORMAL if is_disabled else tk.DISABLED)
+        for widget in [self.patrol_radio, self.ev_radio, self.fish_radio, self.pokemon_entry, self.calibrate_ocr_button, self.test_ocr_button, self.invert_colors_check, self.calibrate_capture_button, self.capture_check] + self.radio_buttons:
+            widget.config(state=state)
         
     def on_closing(self): self.save_config(); self.stop_bot(); self.destroy()
 
-    # ### CORRIGIDO ###: A função agora aceita *args e **kwargs corretamente.
     def executar_com_foco(self, acao, *args, **kwargs):
         if not find_game_window(): self.update_status("Janela do jogo perdida!", "red"); self.after(0, self.stop_bot); return None
         foco_anterior = win32gui.GetForegroundWindow()
@@ -161,7 +181,7 @@ class BotControllerGUI(tk.Tk):
                 win32gui.SetForegroundWindow(game_hwnd); time.sleep(0.05)
             except Exception as e: print(f"Não foi possível focar na janela: {e}"); return None
         
-        resultado = acao(*args, **kwargs) # Passa TODOS os argumentos
+        resultado = acao(*args, **kwargs)
         
         if game_hwnd != foco_anterior and win32gui.IsWindow(foco_anterior):
             try: win32gui.SetForegroundWindow(foco_anterior)
@@ -175,12 +195,11 @@ class BotControllerGUI(tk.Tk):
     
     def lutar(self):
         escolha = self.attack_choice_var.get()
-        if escolha != 'run':
-            self.update_status(f"A atacar com o movimento '{escolha}'...", "red")
-            pyautogui.press(escolha)
+        self.update_status(f"A atacar com o movimento '{escolha}'...", "red")
+        pyautogui.press(escolha)
 
     def tentar_fugir(self):
-        self.update_status("Não é alvo. A fugir...", "cyan")
+        self.update_status("A fugir...", "cyan")
         pyautogui.press('r')
 
     def tentar_capturar(self):
@@ -189,19 +208,6 @@ class BotControllerGUI(tk.Tk):
         time.sleep(0.3)
         pyautogui.moveTo(POSICAO_POKEBOLA, duration=0.1); pyautogui.click()
         
-    def pescar(self):
-        if self.executar_com_foco(pyautogui.locateOnScreen, IMAGEM_BATALHA, confidence=CONFIANCA_BATALHA): self.handle_battle(); return
-        try:
-            if self.executar_com_foco(pyautogui.locateOnScreen, IMAGEM_PEIXE, confidence=CONFIANCA_PEIXE):
-                self.update_status("Peixe fisgado!", "green")
-                self.executar_com_foco(pyautogui.press, TECLA_PESCA)
-                self.last_action_time = time.time(); time.sleep(2.0); return
-        except pyautogui.PyAutoGUIException: pass
-        if time.time() - self.last_action_time > COOLDOWN_RECAST_PESCA:
-            self.update_status("A lançar a vara...", "cyan")
-            self.executar_com_foco(pyautogui.press, TECLA_PESCA)
-            self.last_action_time = time.time()
-
     def test_ocr(self): self.executar_com_foco(self._internal_test_ocr)
     def _internal_test_ocr(self):
         if REGIAO_NOME_POKEMON[2] <= 0: self.update_status("ERRO: Região OCR não calibrada!", "red"); return
@@ -210,109 +216,88 @@ class BotControllerGUI(tk.Tk):
             if self.invert_colors_var.get(): img_cinza = ImageOps.invert(img_cinza)
             texto_extraido = pytesseract.image_to_string(img_cinza, config='--psm 7').strip().lower()
             if not texto_extraido: self.update_status("OCR não leu nenhum texto.", "orange"); return
-            lista_alvos = [nome.strip().lower() for nome in self.pokemon_name_var.get().split(',') if nome.strip()]
-            if not lista_alvos: self.update_status(f"OCR Leu: '{texto_extraido}' (Sem alvos)", "blue"); return
-            best_match, best_score = max(((alvo, fuzz.partial_ratio(alvo, texto_extraido)) for alvo in lista_alvos), key=lambda item: item[1])
-            self.update_status(f"'{texto_extraido}' -> Melhor Match: '{best_match}' ({best_score}%)", "blue")
+            self.update_status(f"OCR Leu: '{texto_extraido}'", "blue")
         except Exception as e: self.update_status(f"Erro no teste de OCR: {e}", "red")
 
     def is_target_pokemon(self):
         nomes_alvo_str = self.pokemon_name_var.get().strip()
-        if not nomes_alvo_str or REGIAO_NOME_POKEMON[2] <= 0: return False
+        if not nomes_alvo_str or REGIAO_NOME_POKEMON[2] <= 0: return False, None
         lista_alvos = [nome.strip().lower() for nome in nomes_alvo_str.split(',') if nome.strip()]
-        if not lista_alvos: return False
+        if not lista_alvos: return False, None
         try:
             screenshot = self.executar_com_foco(pyautogui.screenshot, region=REGIAO_NOME_POKEMON)
-            if screenshot is None: return False
+            if screenshot is None: return False, None
             img_cinza = screenshot.convert('L')
             if self.invert_colors_var.get(): img_cinza = ImageOps.invert(img_cinza)
             texto_extraido = pytesseract.image_to_string(img_cinza, config='--psm 7').strip().lower()
             if texto_extraido:
                 for alvo in lista_alvos:
                     if fuzz.partial_ratio(alvo, texto_extraido) >= FUZZY_MATCH_THRESHOLD:
-                        self.after(0, self.update_status, f"Alvo '{alvo}' encontrado!", "magenta"); return True
-        except Exception as e: print(f"[Aviso OCR] Erro ao ler nome: {e}")
-        return False
+                        self.after(0, self.update_status, f"Alvo '{alvo}' encontrado!", "magenta"); return True, texto_extraido
+            return False, texto_extraido
+        except Exception as e:
+            print(f"[Aviso OCR] Erro ao ler nome: {e}")
+            return False, None
 
     def handle_battle(self):
+        time.sleep(PAUSA_INICIO_BATALHA + 0.3) # Pausa estratégica para o OCR
         self.update_status("Batalha detectada!", "orange")
-        time.sleep(PAUSA_INICIO_BATALHA)
+
+        if self.attack_choice_var.get() == 'run':
+            self.executar_com_foco(self.tentar_fugir)
+            time.sleep(PAUSA_POS_FUGA)
+            return
+            
+        e_um_alvo, nome_ocr = self.is_target_pokemon()
 
         modo_atual = self.bot_mode_var.get()
-        e_um_alvo_nesta_batalha = self.is_target_pokemon()
-
-        if modo_atual == 'ev' and not e_um_alvo_nesta_batalha:
+        if modo_atual == 'ev' and not e_um_alvo:
             self.executar_com_foco(self.tentar_fugir)
             time.sleep(PAUSA_POS_FUGA)
             return
 
-        while self.bot_is_running:
-            try:
-                hp_bar_location = self.executar_com_foco(pyautogui.locateOnScreen, IMAGEM_HP_INIMIGO, confidence=CONFIANCA_HP)
-                if hp_bar_location:
-                    self.update_status("Batalha continua...", "orange")
-                    acao_a_executar = None
-                    if modo_atual == 'ev':
-                        acao_a_executar = self.lutar
-                    else:
-                        if self.capture_enabled_var.get() and e_um_alvo_nesta_batalha:
-                            acao_a_executar = self.tentar_capturar
-                        else:
-                            acao_a_executar = self.lutar
-                    self.executar_com_foco(acao_a_executar)
-                    time.sleep(PAUSA_POS_ACAO)
-                else:
-                    # Batalha terminou
-                    if (modo_atual != 'ev') and self.capture_enabled_var.get() and e_um_alvo_nesta_batalha:
-                        self.update_status("Alvo capturado! Retomando...", "magenta")
-                        self.capture_count += 1
-                        self.after(0, self.update_capture_count_label)
-                    else:
-                        self.update_status("Batalha terminada. Retomando...", "green")
-                    time.sleep(PAUSA_FIM_BATALHA)
-                    return
-            except pyautogui.ImageNotFoundException:
-                # Se locateOnScreen falhar, assume que a batalha terminou
-                if (modo_atual != 'ev') and self.capture_enabled_var.get() and e_um_alvo_nesta_batalha:
-                    self.update_status("Alvo capturado! (exceção)", "magenta")
-                    self.capture_count += 1
-                    self.after(0, self.update_capture_count_label)
-                else:
-                    self.update_status("Batalha terminada (exceção).", "green")
-                time.sleep(PAUSA_FIM_BATALHA)
-                return
+        acao_a_executar = self.lutar
+        if modo_atual != 'ev' and self.capture_enabled_var.get() and e_um_alvo:
+            acao_a_executar = self.tentar_capturar
+        
+        self.executar_com_foco(acao_a_executar)
+        time.sleep(PAUSA_POS_ACAO)
+        
+        try:
+            self.executar_com_foco(pyautogui.locateOnScreen, IMAGEM_HP_INIMIGO, confidence=CONFIANCA_HP)
+            self.update_status("Inimigo sobreviveu. A aguardar próximo turno...", "red")
+        except pyautogui.PyAutoGUIException:
+            self.update_status("Inimigo derrotado/capturado!", "green")
+            if e_um_alvo:
+                self.capture_count += 1
+                self.after(0, self.update_capture_count_label)
+            time.sleep(PAUSA_FIM_BATALHA)
 
-    # ### CORRIGIDO E SIMPLIFICADO ###: Voltando à estrutura original e funcional.
     def run_bot_logic(self):
         pythoncom.CoInitialize()
         while self.bot_is_running:
             try:
                 batalha_encontrada = self.executar_com_foco(pyautogui.locateOnScreen, IMAGEM_BATALHA, confidence=CONFIANCA_BATALHA)
-
                 if batalha_encontrada:
                     self.handle_battle()
                 else:
                     current_mode = self.bot_mode_var.get()
                     if current_mode == 'pesca':
-                        self.pescar()
+                        # Lógica de pesca removida para simplificar. Pode ser adicionada de volta.
+                        pass
                     else:
                         self.update_status("A patrulhar...", "green")
                         self.executar_com_foco(self.mover)
-                
-                time.sleep(0.1)
-
+                time.sleep(0.02)
+            except pyautogui.PyAutoGUIException:
+                current_mode = self.bot_mode_var.get()
+                if current_mode != 'pesca':
+                    self.update_status("A patrulhar...", "green"); self.executar_com_foco(self.mover)
+                time.sleep(0.02)
             except Exception as e:
-                # O ImageNotFoundException do locateOnScreen no loop principal pode ser ignorado
-                if isinstance(e, pyautogui.ImageNotFoundException):
-                    current_mode = self.bot_mode_var.get()
-                    if current_mode == 'pesca': self.pescar()
-                    else: self.update_status("A patrulhar...", "green"); self.executar_com_foco(self.mover)
-                    time.sleep(0.1)
-                else:
-                    # Lida com erros críticos e inesperados
-                    print("\n--- ERRO CRÍTICO INESPERADO ---"); traceback.print_exc(); print("--------------------------------\n")
-                    self.after(0, self.update_status, f"ERRO: {type(e).__name__}. Ver consola.", "red"); self.after(0, self.stop_bot)
-                    break
+                print("\n--- ERRO CRÍTICO INESPERADO ---"); traceback.print_exc(); print("--------------------------------\n")
+                self.after(0, self.update_status, f"ERRO: {type(e).__name__}. Ver consola.", "red"); self.after(0, self.stop_bot)
+                break
         pythoncom.CoUninitialize()
 
 if __name__ == "__main__":
