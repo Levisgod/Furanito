@@ -25,7 +25,7 @@ NOME_JANELA = "Pokemon Blaze Online"
 IMAGEM_BATALHA = 'batalha.png'
 IMAGEM_HP_INIMIGO = 'fim_batalha.png'
 IMAGEM_PEIXE = 'peixe.png'
-DEFAULT_POKEMON_PARAR = "ditto, zigzagoon" # Removido 'shiny' daqui
+DEFAULT_POKEMON_PARAR = "ditto, zigzagoon"
 
 def get_tesseract_path():
     if getattr(sys, 'frozen', False): base_path = sys._MEIPASS
@@ -38,7 +38,7 @@ except Exception as e: print(f"Aviso: Não foi possível configurar o Tesseract.
 REGIAO_NOME_POKEMON = (0, 0, 0, 0); POSICAO_BAG = (0, 0); POSICAO_POKEBOLA = (0, 0)
 
 # Constantes de comportamento
-SEQUENCIA_MOVIMENTO = ['a', 'd']; TECLA_PESCA = 'f'; COOLDOWN_RECAST_PESCA = 4.0
+SEQUENCIA_MOVIMENTO = ['a', 'd']; TECLA_PESCA = 'f'; COOLDOWN_RECAST_PESCA = 1.0
 CONFIANCA_BATALHA = 0.7; CONFIANCA_HP = 0.8; CONFIANCA_PEIXE = 0.8
 FUZZY_MATCH_THRESHOLD = 70
 DURACAO_MOVIMENTO = 0.01
@@ -152,7 +152,9 @@ class BotControllerGUI(tk.Tk):
         self.save_config()
         if not find_game_window(): self.update_status(f"Janela '{NOME_JANELA}' não encontrada!", "red"); return
         if not self.bot_is_running:
-            self.capture_count = 0; self.update_capture_count_label(); self.last_action_time = 0; self.bot_is_running = True
+            self.capture_count = 0; self.update_capture_count_label()
+            self.last_action_time = 0 # Importante para a pesca começar imediatamente
+            self.bot_is_running = True
             self.update_status("Bot a iniciar...", "blue")
             self.bot_thread = threading.Thread(target=self.run_bot_logic, daemon=True); self.bot_thread.start()
             self.toggle_ui_state(tk.DISABLED)
@@ -208,6 +210,34 @@ class BotControllerGUI(tk.Tk):
         time.sleep(0.3)
         pyautogui.moveTo(POSICAO_POKEBOLA, duration=0.1); pyautogui.click()
         
+    def pescar(self):
+        # 1. Prioridade máxima: se uma batalha começou, lida com ela.
+        try:
+            if pyautogui.locateOnScreen(IMAGEM_BATALHA, confidence=CONFIANCA_BATALHA):
+                self.update_status("Batalha durante a pesca!", "orange")
+                self.handle_battle()
+                self.last_action_time = 0 
+                return
+        except pyautogui.PyAutoGUIException:
+            pass
+
+        # 2. Verifica se o peixe mordeu a isca
+        try:
+            if pyautogui.locateOnScreen(IMAGEM_PEIXE, confidence=CONFIANCA_PEIXE):
+                self.update_status("Peixe fisgado!", "green")
+                pyautogui.press(TECLA_PESCA)
+                time.sleep(0.3) 
+                self.last_action_time = 0
+                return
+        except pyautogui.PyAutoGUIException:
+            pass
+
+        # 3. Se nada aconteceu, verifica se é hora de lançar a vara novamente
+        if time.time() - self.last_action_time > COOLDOWN_RECAST_PESCA:
+            self.update_status("A lançar a vara...", "cyan")
+            pyautogui.press(TECLA_PESCA)
+            self.last_action_time = time.time()
+            
     def test_ocr(self): self.executar_com_foco(self._internal_test_ocr)
     def _internal_test_ocr(self):
         if REGIAO_NOME_POKEMON[2] <= 0: self.update_status("ERRO: Região OCR não calibrada!", "red"); return
@@ -240,7 +270,7 @@ class BotControllerGUI(tk.Tk):
             return False, None
 
     def handle_battle(self):
-        time.sleep(PAUSA_INICIO_BATALHA + 0.3) # Pausa estratégica para o OCR
+        time.sleep(PAUSA_INICIO_BATALHA + 0.3)
         self.update_status("Batalha detectada!", "orange")
 
         if self.attack_choice_var.get() == 'run':
@@ -275,29 +305,36 @@ class BotControllerGUI(tk.Tk):
 
     def run_bot_logic(self):
         pythoncom.CoInitialize()
-        while self.bot_is_running:
+
+        def _internal_logic():
             try:
-                batalha_encontrada = self.executar_com_foco(pyautogui.locateOnScreen, IMAGEM_BATALHA, confidence=CONFIANCA_BATALHA)
-                if batalha_encontrada:
-                    self.handle_battle()
+                # A função pescar já lida com a deteção de batalha
+                if self.bot_mode_var.get() == 'pesca':
+                    self.pescar()
                 else:
-                    current_mode = self.bot_mode_var.get()
-                    if current_mode == 'pesca':
-                        # Lógica de pesca removida para simplificar. Pode ser adicionada de volta.
-                        pass
+                    # Outros modos verificam a batalha primeiro
+                    if pyautogui.locateOnScreen(IMAGEM_BATALHA, confidence=CONFIANCA_BATALHA):
+                        self.handle_battle()
+                        return
                     else:
                         self.update_status("A patrulhar...", "green")
-                        self.executar_com_foco(self.mover)
-                time.sleep(0.02)
-            except pyautogui.PyAutoGUIException:
-                current_mode = self.bot_mode_var.get()
-                if current_mode != 'pesca':
-                    self.update_status("A patrulhar...", "green"); self.executar_com_foco(self.mover)
-                time.sleep(0.02)
+                        self.mover()
+
+            except pyautogui.ImageNotFoundException:
+                # É normal não encontrar a imagem de batalha
+                if self.bot_mode_var.get() != 'pesca':
+                    self.update_status("A patrulhar...", "green")
+                    self.mover()
             except Exception as e:
-                print("\n--- ERRO CRÍTICO INESPERADO ---"); traceback.print_exc(); print("--------------------------------\n")
-                self.after(0, self.update_status, f"ERRO: {type(e).__name__}. Ver consola.", "red"); self.after(0, self.stop_bot)
-                break
+                print("\n--- ERRO CRÍTICO INESPERADO ---"); traceback.print_exc()
+                self.after(0, self.update_status, f"ERRO: {type(e).__name__}", "red")
+                self.after(0, self.stop_bot)
+                self.bot_is_running = False 
+
+        while self.bot_is_running:
+            self.executar_com_foco(_internal_logic)
+            time.sleep(0.2)
+            
         pythoncom.CoUninitialize()
 
 if __name__ == "__main__":

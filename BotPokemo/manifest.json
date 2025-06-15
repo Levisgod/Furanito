@@ -1,8 +1,8 @@
 {
-    "version": "1.0.2",
+    "version": "1.0.3",
     "files_in_repo": {},
     "files_in_release": {
-        "bot.exe": "bc6a4650ef1ec696435ac8d6994f0e6d411671e5c066f8d79b165182fb388d24",
+        "bot.exe": "2dcf6c2627de0317995981ea5ec962109ca0bfb992f4a4a1e6ef972115611a4d",
         "updater.exe": "c4a333d733fc2f9a17bb5c254b7f89ccc6821a5cfd2300263ca9962ab7b0a58b"
     }
 }
