@@ -26,6 +26,8 @@ IMAGEM_BATALHA = 'batalha.png'
 IMAGEM_HP_INIMIGO = 'fim_batalha.png'
 IMAGEM_PEIXE = 'peixe.png'
 DEFAULT_POKEMON_PARAR = "ditto, zigzagoon"
+IMAGEM_APRENDER_ATAQUE = 'x.png'
+POSICAO_RECUSAR_ATAQUE = (0, 0)
 
 def get_tesseract_path():
     if getattr(sys, 'frozen', False): base_path = sys._MEIPASS
@@ -38,7 +40,7 @@ except Exception as e: print(f"Aviso: Não foi possível configurar o Tesseract.
 REGIAO_NOME_POKEMON = (0, 0, 0, 0); POSICAO_BAG = (0, 0); POSICAO_POKEBOLA = (0, 0)
 
 # Constantes de comportamento
-SEQUENCIA_MOVIMENTO = ['a', 'd']; TECLA_PESCA = 'f'; COOLDOWN_RECAST_PESCA = 1.0
+SEQUENCIA_MOVIMENTO = ['a', 'd']; TECLA_PESCA = 'f';
 CONFIANCA_BATALHA = 0.7; CONFIANCA_HP = 0.8; CONFIANCA_PEIXE = 0.8
 FUZZY_MATCH_THRESHOLD = 70
 DURACAO_MOVIMENTO = 0.01
@@ -61,99 +63,146 @@ print("Sistema de controlo PRONTO.")
 class BotControllerGUI(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Controlador do Bot"); self.geometry("380x460"); self.wm_attributes("-topmost", 1)
+        self.title("Controlador do Bot"); self.geometry("380x520"); self.wm_attributes("-topmost", 1)
         self.bot_is_running = False; self.bot_thread = None; self.indice_movimento_atual = 0
         self.listener = None; self.last_action_time = 0; self.capture_count = 0
-        self.ocr_calibration_step = 0; self.capture_calibration_step = 0; self.first_click = None
+        self.calibration_mode = None; self.ocr_calibration_step = 0; self.capture_calibration_step = 0; self.first_click = None
         self.default_font = font.Font(family="Helvetica", size=10); self.bold_font = font.Font(family="Helvetica", size=10, weight="bold")
         self.bot_mode_var = tk.StringVar(value="patrulha"); self.pokemon_name_var = tk.StringVar(value=DEFAULT_POKEMON_PARAR)
         self.region_var = tk.StringVar(value=f"Região: {REGIAO_NOME_POKEMON}"); self.attack_choice_var = tk.StringVar(value="3")
         self.capture_enabled_var = tk.BooleanVar(value=True); self.bag_pos_var = tk.StringVar(value=f"Bag: {POSICAO_BAG}")
         self.ball_pos_var = tk.StringVar(value=f"Bola: {POSICAO_POKEBOLA}"); self.capture_count_var = tk.StringVar(value="Alvos Capturados: 0")
         self.invert_colors_var = tk.BooleanVar(value=False)
+        self.estado_pesca = "iniciar"
+        
+        self.recusar_ataque_var = tk.BooleanVar(value=True)
+        self.pos_recusar_var = tk.StringVar(value=f"Pos. Recusar: {POSICAO_RECUSAR_ATAQUE}")
+        
         self.load_config(); self.create_widgets(); self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
         if os.path.exists(CONFIG_FILE) and REGIAO_NOME_POKEMON[2] > 0: status_inicial, status_color = "Bot parado. Configuração carregada.", "green"
         else: status_inicial, status_color = "PRIMEIRA VEZ? Vá à aba de Calibração!", "red"
         self.status_label = tk.Label(self, text=status_inicial, font=self.default_font, fg=status_color); self.status_label.pack(pady=5)
+        
         notebook = ttk.Notebook(self); notebook.pack(pady=10, padx=10, fill="both", expand=True)
         tab_control = ttk.Frame(notebook); tab_calibration = ttk.Frame(notebook)
         notebook.add(tab_control, text='Controle Principal'); notebook.add(tab_calibration, text='Calibração')
+        
         mode_frame = tk.LabelFrame(tab_control, text="Modo de Operação", font=self.default_font); mode_frame.pack(pady=5, padx=10, fill=tk.X)
         self.patrol_radio = tk.Radiobutton(mode_frame, text="Patrulha (Captura)", variable=self.bot_mode_var, value="patrulha", font=self.default_font); self.patrol_radio.pack(side=tk.LEFT, expand=True)
         self.ev_radio = tk.Radiobutton(mode_frame, text="Treino EV", variable=self.bot_mode_var, value="ev", font=self.default_font); self.ev_radio.pack(side=tk.LEFT, expand=True)
         self.fish_radio = tk.Radiobutton(mode_frame, text="Pesca", variable=self.bot_mode_var, value="pesca", font=self.default_font); self.fish_radio.pack(side=tk.LEFT, expand=True)
+        
         target_frame = tk.LabelFrame(tab_control, text="Pokémon Alvo (separar por vírgula)", font=self.default_font); target_frame.pack(pady=5, padx=10, fill=tk.X)
         self.pokemon_entry = tk.Entry(target_frame, textvariable=self.pokemon_name_var, font=self.default_font); self.pokemon_entry.pack(pady=5, padx=5, fill=tk.X)
+        
         attack_frame = tk.LabelFrame(tab_control, text="Ação de Batalha Padrão", font=self.default_font); attack_frame.pack(pady=5, padx=10, fill=tk.X)
         self.radio_buttons = []
         for i in range(1, 5): rb = tk.Radiobutton(attack_frame, text=f"{i}", variable=self.attack_choice_var, value=str(i)); rb.pack(side=tk.LEFT, expand=True); self.radio_buttons.append(rb)
         run_rb = tk.Radiobutton(attack_frame, text="Run", variable=self.attack_choice_var, value="run"); run_rb.pack(side=tk.LEFT, expand=True); self.radio_buttons.append(run_rb)
+        
+        options_frame = tk.LabelFrame(tab_control, text="Opções Adicionais", font=self.default_font); options_frame.pack(pady=5, padx=10, fill=tk.X)
+        self.recusar_ataque_check = tk.Checkbutton(options_frame, text="Recusar automaticamente novos ataques", variable=self.recusar_ataque_var, font=self.default_font)
+        self.recusar_ataque_check.pack(anchor=tk.W, padx=5)
+
         stats_frame = tk.LabelFrame(tab_control, text="Estatísticas", font=self.default_font); stats_frame.pack(pady=5, padx=10, fill=tk.X)
         self.capture_count_label = tk.Label(stats_frame, textvariable=self.capture_count_var, font=self.default_font); self.capture_count_label.pack(pady=5, padx=5)
-        calibration_frame = tk.LabelFrame(tab_calibration, text="Calibração do OCR", font=self.default_font); calibration_frame.pack(pady=10, padx=10, fill=tk.X)
+
+        calibration_frame = tk.LabelFrame(tab_calibration, text="Calibração do OCR", font=self.default_font); calibration_frame.pack(pady=5, padx=10, fill=tk.X)
         ocr_buttons_frame = tk.Frame(calibration_frame); ocr_buttons_frame.pack(fill=tk.X, pady=5)
         self.calibrate_ocr_button = tk.Button(ocr_buttons_frame, text="Calibrar Região OCR", command=self.start_ocr_calibration, font=self.default_font); self.calibrate_ocr_button.pack(side=tk.LEFT, padx=5)
         self.test_ocr_button = tk.Button(ocr_buttons_frame, text="Testar OCR", command=self.test_ocr, font=self.default_font); self.test_ocr_button.pack(side=tk.LEFT, padx=5)
         self.region_label = tk.Label(calibration_frame, textvariable=self.region_var, font=self.default_font); self.region_label.pack(fill=tk.X, padx=5)
         self.invert_colors_check = tk.Checkbutton(calibration_frame, text="Inverter Cores (para texto branco)", variable=self.invert_colors_var, font=self.default_font); self.invert_colors_check.pack(anchor=tk.W, padx=5)
-        capture_frame = tk.LabelFrame(tab_calibration, text="Captura Automática", font=self.default_font); capture_frame.pack(pady=10, padx=10, fill=tk.X)
+        
+        capture_frame = tk.LabelFrame(tab_calibration, text="Captura Automática", font=self.default_font); capture_frame.pack(pady=5, padx=10, fill=tk.X)
         self.capture_check = tk.Checkbutton(capture_frame, text="Tentar Capturar Pokémon Alvo", variable=self.capture_enabled_var, font=self.default_font); self.capture_check.pack(anchor=tk.W, padx=5)
         capture_buttons_frame = tk.Frame(capture_frame); capture_buttons_frame.pack(fill=tk.X, pady=5)
         self.calibrate_capture_button = tk.Button(capture_buttons_frame, text="Calibrar Captura", command=self.start_capture_calibration, font=self.default_font); self.calibrate_capture_button.pack(side=tk.LEFT, padx=5)
         self.bag_pos_label = tk.Label(capture_buttons_frame, textvariable=self.bag_pos_var, font=self.default_font); self.bag_pos_label.pack(side=tk.LEFT, padx=5)
         self.ball_pos_label = tk.Label(capture_buttons_frame, textvariable=self.ball_pos_var, font=self.default_font); self.ball_pos_label.pack(side=tk.LEFT, padx=5)
+        
+        attack_learn_frame = tk.LabelFrame(tab_calibration, text="Aprendizagem de Ataques", font=self.default_font)
+        attack_learn_frame.pack(pady=5, padx=10, fill=tk.X)
+        attack_learn_buttons_frame = tk.Frame(attack_learn_frame)
+        attack_learn_buttons_frame.pack(fill=tk.X, pady=5)
+        self.calibrate_refuse_button = tk.Button(attack_learn_buttons_frame, text="Calibrar Posição 'Não'", command=self.start_refuse_calibration, font=self.default_font)
+        self.calibrate_refuse_button.pack(side=tk.LEFT, padx=5)
+        self.pos_recusar_label = tk.Label(attack_learn_buttons_frame, textvariable=self.pos_recusar_var, font=self.default_font)
+        self.pos_recusar_label.pack(side=tk.LEFT, padx=5)
+        
         self.start_button = tk.Button(self, text="Start Bot", command=self.start_bot, font=self.bold_font, bg="#4CAF50", fg="white"); self.start_button.pack(pady=5, fill=tk.X, padx=20)
         self.stop_button = tk.Button(self, text="Stop Bot", command=self.stop_bot, font=self.bold_font, bg="#f44336", fg="white", state=tk.DISABLED); self.stop_button.pack(pady=(0, 5), fill=tk.X, padx=20)
 
     def load_config(self):
-        global REGIAO_NOME_POKEMON, POSICAO_BAG, POSICAO_POKEBOLA
+        global REGIAO_NOME_POKEMON, POSICAO_BAG, POSICAO_POKEBOLA, POSICAO_RECUSAR_ATAQUE
         try:
             with open(CONFIG_FILE, 'r') as f: config_data = json.load(f)
             REGIAO_NOME_POKEMON = tuple(config_data.get('regiao_ocr', (0,0,0,0)))
             POSICAO_BAG = tuple(config_data.get('posicao_bag', (0,0)))
             POSICAO_POKEBOLA = tuple(config_data.get('posicao_pokebola', (0,0)))
+            POSICAO_RECUSAR_ATAQUE = tuple(config_data.get('posicao_recusar_ataque', (0,0)))
+            self.recusar_ataque_var.set(config_data.get('recusar_ataques', True))
             self.invert_colors_var.set(config_data.get('inverter_cores', False))
             self.region_var.set(f"Região: {REGIAO_NOME_POKEMON}")
             self.bag_pos_var.set(f"Bag: {POSICAO_BAG}")
             self.ball_pos_var.set(f"Bola: {POSICAO_POKEBOLA}")
+            self.pos_recusar_var.set(f"Pos. Recusar: {POSICAO_RECUSAR_ATAQUE}")
         except (FileNotFoundError, json.JSONDecodeError): print("Arquivo de configuração não encontrado ou inválido. Usando padrões.")
         
     def save_config(self):
-        with open(CONFIG_FILE, 'w') as f: json.dump({'regiao_ocr': REGIAO_NOME_POKEMON, 'posicao_bag': POSICAO_BAG, 'posicao_pokebola': POSICAO_POKEBOLA, 'inverter_cores': self.invert_colors_var.get()}, f, indent=4)
+        config_data = {
+            'regiao_ocr': REGIAO_NOME_POKEMON, 
+            'posicao_bag': POSICAO_BAG, 
+            'posicao_pokebola': POSICAO_POKEBOLA, 
+            'inverter_cores': self.invert_colors_var.get(),
+            'posicao_recusar_ataque': POSICAO_RECUSAR_ATAQUE,
+            'recusar_ataques': self.recusar_ataque_var.get()
+        }
+        with open(CONFIG_FILE, 'w') as f: json.dump(config_data, f, indent=4)
         
     def update_status(self, message, color="black"): self.status_label.config(text=message, fg=color)
     def update_capture_count_label(self): self.capture_count_var.set(f"Alvos Capturados: {self.capture_count}")
     
     def start_ocr_calibration(self):
         self.update_status("CALIBRAR OCR: Clique no CANTO SUPERIOR ESQUERDO.", "blue")
-        self.ocr_calibration_step = 1; self.capture_calibration_step = 0
+        self.calibration_mode = "ocr"; self.ocr_calibration_step = 1
         self.listener = mouse.Listener(on_click=self.on_click); self.listener.start()
         
     def start_capture_calibration(self):
         self.update_status("CALIBRAR CAPTURA: Clique no botão da BAG.", "blue")
-        self.capture_calibration_step = 1; self.ocr_calibration_step = 0
+        self.calibration_mode = "capture"; self.capture_calibration_step = 1
+        self.listener = mouse.Listener(on_click=self.on_click); self.listener.start()
+
+    def start_refuse_calibration(self):
+        self.update_status("CALIBRAR RECUSA: Clique no botão 'Não'/'Cancelar'.", "blue")
+        self.calibration_mode = "recusar_ataque" 
         self.listener = mouse.Listener(on_click=self.on_click); self.listener.start()
         
     def on_click(self, x, y, button, pressed):
-        if not pressed: return
-        if self.ocr_calibration_step == 1: self.first_click = (x, y); self.ocr_calibration_step = 2; self.after(0, self.update_status, "Ótimo! Agora clique no CANTO INFERIOR DIREITO.", "blue"); return
-        if self.ocr_calibration_step == 2:
-            global REGIAO_NOME_POKEMON; REGIAO_NOME_POKEMON = (self.first_click[0], self.first_click[1], x - self.first_click[0], y - self.first_click[1]); self.ocr_calibration_step = 0; self.save_config(); self.after(0, self.update_status, "Calibração OCR concluída!", "green"); self.after(0, self.region_var.set, f"Região: {REGIAO_NOME_POKEMON}");
-            if self.listener: self.listener.stop(); return
-        if self.capture_calibration_step == 1:
-            global POSICAO_BAG; POSICAO_BAG = (x, y); self.capture_calibration_step = 2; self.after(0, self.update_status, "BAG salva! Agora clique na POKÉBOLA.", "blue"); self.after(0, self.bag_pos_var.set, f"Bag: {POSICAO_BAG}"); return
-        if self.capture_calibration_step == 2:
-            global POSICAO_POKEBOLA; POSICAO_POKEBOLA = (x, y); self.capture_calibration_step = 0; self.save_config(); self.after(0, self.update_status, "Calibração de captura concluída!", "green"); self.after(0, self.ball_pos_var.set, f"Bola: {POSICAO_POKEBOLA}");
-            if self.listener: self.listener.stop(); return
+        if not pressed or not self.listener: return
+
+        if self.calibration_mode == "ocr":
+            if self.ocr_calibration_step == 1: self.first_click = (x, y); self.ocr_calibration_step = 2; self.after(0, self.update_status, "Ótimo! Agora clique no CANTO INFERIOR DIREITO.", "blue"); return
+            elif self.ocr_calibration_step == 2: global REGIAO_NOME_POKEMON; REGIAO_NOME_POKEMON = (self.first_click[0], self.first_click[1], x - self.first_click[0], y - self.first_click[1]); self.after(0, self.update_status, "Calibração OCR concluída!", "green"); self.after(0, self.region_var.set, f"Região: {REGIAO_NOME_POKEMON}")
+        
+        elif self.calibration_mode == "capture":
+            if self.capture_calibration_step == 1: global POSICAO_BAG; POSICAO_BAG = (x, y); self.capture_calibration_step = 2; self.after(0, self.update_status, "BAG salva! Agora clique na POKÉBOLA.", "blue"); self.after(0, self.bag_pos_var.set, f"Bag: {POSICAO_BAG}"); return
+            elif self.capture_calibration_step == 2: global POSICAO_POKEBOLA; POSICAO_POKEBOLA = (x, y); self.after(0, self.update_status, "Calibração de captura concluída!", "green"); self.after(0, self.ball_pos_var.set, f"Bola: {POSICAO_POKEBOLA}")
+
+        elif self.calibration_mode == "recusar_ataque":
+            global POSICAO_RECUSAR_ATAQUE; POSICAO_RECUSAR_ATAQUE = (x, y)
+            self.after(0, self.update_status, "Posição de recusa de ataque salva!", "green"); self.after(0, self.pos_recusar_var.set, f"Pos. Recusar: {POSICAO_RECUSAR_ATAQUE}")
+
+        self.save_config(); self.calibration_mode = None; self.ocr_calibration_step = 0; self.capture_calibration_step = 0; self.listener.stop()
 
     def start_bot(self):
         self.save_config()
         if not find_game_window(): self.update_status(f"Janela '{NOME_JANELA}' não encontrada!", "red"); return
         if not self.bot_is_running:
             self.capture_count = 0; self.update_capture_count_label()
-            self.last_action_time = 0 # Importante para a pesca começar imediatamente
+            self.last_action_time = 0
             self.bot_is_running = True
             self.update_status("Bot a iniciar...", "blue")
             self.bot_thread = threading.Thread(target=self.run_bot_logic, daemon=True); self.bot_thread.start()
@@ -168,7 +217,7 @@ class BotControllerGUI(tk.Tk):
         is_disabled = state == tk.DISABLED
         self.start_button.config(state=tk.DISABLED if is_disabled else tk.NORMAL)
         self.stop_button.config(state=tk.NORMAL if is_disabled else tk.DISABLED)
-        for widget in [self.patrol_radio, self.ev_radio, self.fish_radio, self.pokemon_entry, self.calibrate_ocr_button, self.test_ocr_button, self.invert_colors_check, self.calibrate_capture_button, self.capture_check] + self.radio_buttons:
+        for widget in [self.patrol_radio, self.ev_radio, self.fish_radio, self.pokemon_entry, self.calibrate_ocr_button, self.test_ocr_button, self.invert_colors_check, self.calibrate_capture_button, self.capture_check, self.recusar_ataque_check, self.calibrate_refuse_button] + self.radio_buttons:
             widget.config(state=state)
         
     def on_closing(self): self.save_config(); self.stop_bot(); self.destroy()
@@ -211,7 +260,6 @@ class BotControllerGUI(tk.Tk):
         pyautogui.moveTo(POSICAO_POKEBOLA, duration=0.1); pyautogui.click()
         
     def pescar(self):
-        # 1. Prioridade máxima: se uma batalha começou, lida com ela.
         try:
             if pyautogui.locateOnScreen(IMAGEM_BATALHA, confidence=CONFIANCA_BATALHA):
                 self.update_status("Batalha durante a pesca!", "orange")
@@ -221,19 +269,17 @@ class BotControllerGUI(tk.Tk):
         except pyautogui.PyAutoGUIException:
             pass
 
-        # 2. Verifica se o peixe mordeu a isca
         try:
             if pyautogui.locateOnScreen(IMAGEM_PEIXE, confidence=CONFIANCA_PEIXE):
                 self.update_status("Peixe fisgado!", "green")
                 pyautogui.press(TECLA_PESCA)
-                time.sleep(0.3) 
+                time.sleep(2.5) 
                 self.last_action_time = 0
                 return
         except pyautogui.PyAutoGUIException:
             pass
 
-        # 3. Se nada aconteceu, verifica se é hora de lançar a vara novamente
-        if time.time() - self.last_action_time > COOLDOWN_RECAST_PESCA:
+        if time.time() - self.last_action_time > 4.0: # Pode usar a constante COOLDOWN_RECAST_PESCA
             self.update_status("A lançar a vara...", "cyan")
             pyautogui.press(TECLA_PESCA)
             self.last_action_time = time.time()
@@ -308,21 +354,34 @@ class BotControllerGUI(tk.Tk):
 
         def _internal_logic():
             try:
-                # A função pescar já lida com a deteção de batalha
-                if self.bot_mode_var.get() == 'pesca':
+                if self.recusar_ataque_var.get():
+                    try:
+                        if pyautogui.locateOnScreen(IMAGEM_APRENDER_ATAQUE, confidence=0.8):
+                            self.update_status("Recusando novo ataque...", "purple")
+                            pyautogui.moveTo(POSICAO_RECUSAR_ATAQUE, duration=0.2)
+                            pyautogui.click()
+                            time.sleep(0.8)
+                            return
+                    except pyautogui.ImageNotFoundException:
+                        pass
+                
+                if pyautogui.locateOnScreen(IMAGEM_BATALHA, confidence=CONFIANCA_BATALHA):
+                    self.handle_battle()
+                    self.last_action_time = 0 # Reinicia a pesca após a batalha
+                    return 
+
+                current_mode = self.bot_mode_var.get()
+                if current_mode == 'pesca':
                     self.pescar()
                 else:
-                    # Outros modos verificam a batalha primeiro
-                    if pyautogui.locateOnScreen(IMAGEM_BATALHA, confidence=CONFIANCA_BATALHA):
-                        self.handle_battle()
-                        return
-                    else:
-                        self.update_status("A patrulhar...", "green")
-                        self.mover()
+                    self.update_status("A patrulhar...", "green")
+                    self.mover()
 
             except pyautogui.ImageNotFoundException:
-                # É normal não encontrar a imagem de batalha
-                if self.bot_mode_var.get() != 'pesca':
+                current_mode = self.bot_mode_var.get()
+                if current_mode == 'pesca':
+                    self.pescar()
+                else:
                     self.update_status("A patrulhar...", "green")
                     self.mover()
             except Exception as e:
